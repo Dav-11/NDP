@@ -5,6 +5,8 @@
 #include <string.h>
 #include <iostream>
 #include <math.h>
+#include <algorithm>
+
 using namespace std;
 
 #ifdef __clang__
