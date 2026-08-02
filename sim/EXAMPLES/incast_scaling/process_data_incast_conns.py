@@ -47,8 +47,8 @@ for t in lasttimes:
 ofile.close()
 namebase = "incast_" + tag + "_completion_times_" + str(cwnd) + "_" + str(filesize) + "size_"
 ofile = open(namebase + "median", "a+")
-print(conns, lasttimes[numflows/2], file=ofile);
-print(conns, lasttimes[numflows/2]);
+print(conns, lasttimes[numflows//2], file=ofile);
+print(conns, lasttimes[numflows//2]);
 ofile.close()
 ofile = open(namebase + "max", "a+")
 print(conns, lasttimes[numflows-1], file=ofile);
