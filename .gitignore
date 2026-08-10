@@ -47,4 +47,14 @@ sim/datacenter/htsim_tcp_incast_shortflows
 sim/datacenter/htsim_tcp_perm_shortflows
 sim/datacenter/htsim_tcp_permutation
 
+sim/datacenter/htsim_ndp_incast_shortflows_offload
 
+sim/EXAMPLES/incast_scaling/incast_ndp_completion_times_*
+sim/EXAMPLES/incast_scaling/ts_incast*
+sim/EXAMPLES/incast_scaling/bounces*
+
+# project documentation
+SPECIFICATION.md
+
+# report
+report/
