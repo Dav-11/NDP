@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# Clean up any existing data files from previous runs to prevent duplicate data
+rm -f incast_ndp_completion_times_* ts_incast* bounces* *.pdf
+
 flowsize=270000
 cwnd=1
 for ((conns=1;conns<=20;conns=conns+1)) ;
