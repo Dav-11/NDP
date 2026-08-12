@@ -1,7 +1,7 @@
-set terminal pdfcairo size 3.5in,2in
+set terminal pngcairo size 7in,4in
 #set terminal png size 600,400
 #set size 1.0, 0.5
-set output "incast_sensitivity.pdf"
+set output "incast_sensitivity.png"
 set yrange [-0.5:5]
 #set yrange [-0.5:0.5]
 #set xrange [900:1100]

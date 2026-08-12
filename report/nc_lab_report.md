@@ -16,63 +16,191 @@ Mark Handley, Costin Raiciu, Alexandru Agache, Andrei Voinescu, Andrew W. Moore,
 
 # 1. Introduction
 
-Introduce the paper by summarizing:
+The paper proposes a new data-center transport architecture called NDP (). This architecture, they say, achieves near-optimal completion
+times for short transfers and high flow throughput in a wide range of scenarios, including incast.
+NDP is designed to work in datacenters using redundant (clos-like) topologies, and requires some operations to be carried out by switches.
 
-- The problem the paper addresses and its importance
-- The key ideas behind its solution and its approach
-- The main contributions
+
+## 1.1 The problem
+The problem this paper tries to address is the design of an architecture that can target both low latency and high throughput. In datacenter networks latency sensitive workloads and high throughput workloads coexists. Some examples of these workloads can be:
+- High throughput workloads:
+  - Remote disks in virtualization (storage for VMs is not located on the same server as the VM).
+  - Distributed Storage (Storage is replicated between servers).
+  - Backups and replications.
+  - Data movement between computing nodes in AI training workload.
+- Latency sensitive workloads:
+  - Database queries
+  - RPC requests
+  - Video/audio streaming
+
+Since datacenters want to support the widest range of workloads it is a very valuable result for them.
+
+## 1.2 The solution
+To fully satisfy these goals, NDP impacts the whole stack, including switch behavior, routing, and a completely new transport protocol.
+<!-- - A Clos topology has sufficient bandwidth in the core to satisfy all demand, so long as it is perfectly load-balanced.
+- per-packet multipath load-balancing.
+  - the path is decided by the sender: Each NDP sender takes the list of paths to a destination, randomly permutes it, then sends packets on paths in this order. After it has sent one packet on each path, it randomly permutes the list of paths again, and the process repeats.
+- To achieve minimal short-flow latency, senders cannot probe before sending: they must send the first RTT at line rate.
+- Switchas have two queues:
+  - To guarantee low latency, switch queues must be small.
+  - packet queue (lower priority)
+  - headers + control packets (higher priority).
+  - The switch performs weighted round robin between the high priority “header queue” and the lower priority “data packet queue” with a 10:1 ratio of headers to packets.
+- Arriving trimmed headers tell the receiver exactly what the demand is, so by using a receiver-pulled protocol, the receiver can then precisely control incoming traffic.
+- The receiver will need to reorder packets as per packet load-balancing will not guarantee ordering. -->
+
+NDP maximizes Clos topology utilization via per-packet multipath spraying, where senders randomly permute shortest paths for each packet, leaving the receiver to reorder them. Senders transmit the first RTT of a flow at line rate to eliminate startup delay. When shallow switch buffers overflow, the switch trims packet payloads and forwards only the headers. Utilizing a dual-priority queue system, switches prioritize these trimmed headers and control packets (like PULLs) over data using a 10:1 weighted round robin scheduler. Armed with a clear view of demand from these arriving headers, the receiver uses a pull-based transport protocol to precisely pace incoming data, achieving near-optimal congestion control and incast mitigation.
+
+
+## 1.3 Contributions
+The paper's main contribution is the architecture's design.
+Inside the code repository for this project there are:
+- the code for the simulations used in the paper
+- POC implementations of the NDP switch (using P4 and netFPGA)
+- POC implementation of the host code using DPDK.
+
 
 # 2. Selected Result
 
-Mention which result of the paper you are reproducing, and explain its importance.
+This report is mainly focused on the **Large scale incast** experiment, which can be found in chapter 6.2 of the paper.
 
-For example:
+In this result, the authors try to stress test the resistence of the architecture in extreme incast conditions, and measure the time overhead (Fig. 20a) and the number of retransmitted packets (Fig. 20b). In both figures the x axis is the number of incast flows, ranging from 1 (no incast) to 8.000 flows, each of 30 pakets (270.000 Bytes).
 
-> “Figure 1 shows that method A improves throughput by 35% over method B under workload *W*. This experiment shows that paper can effectively overcome the motivated challenge.”
+## 2.1 Latency increase in incast scenarios (Incast sensitivity)
+
 
 <center>
   <img
     alt="The figure shows that method A improves throughput compared to method B"
-    src="figures/one_bar.png"
+    src="figures/incast_sensitivity_orig.png"
     style="width:30%;"
     />
-  <p>Figure 1: The figure shows that method A improves throughput compared to method B</p>
+  <p>Figure 20 a: The figure shows </p>
 </center>
+
+Fig. 20a shows the time overhead as a percentage of the best theoretical last-flow completion time; this assumes the link to the receiver is completely saturated until the last flow finishes, and every packet is received only once.
+With a 23 packet IW, small incasts see the worst overheads, but still finish within 2% of optimal.
+For larger incasts, the time overhead is negligible.
+
+<!-- todo: explain better -->
+
+
+## 2.2 Packet retransmission in incast scenarios (Incast overhead)
+
+
+<center>
+  <img
+    alt="The figure shows that method A improves throughput compared to method B"
+    src="figures/incast_overhead_orig.png"
+    style="width:30%;"
+    />
+  <p>Figure 20 b: The figure shows that method A improves throughput compared to method B</p>
+</center>
+
+Fig. 20b shows the mean number of retransmissions per packet, and the mechanism (return-to-sender bounce or NACK) by which the sender was informed of the need to resend. For smaller incasts, NACKs are the main mechanism.
+Above 100 flows, return-to-sender becomes the main mechanism.
+Above 2000 flows, some packets suffer a second return-to-sender before getting through.
+Even with the largest incasts and a 23 packet IW, the mean number of retransmissions barely exceeds one.
+However, it would make sense for applications that know they will create a large incast to reduce the initial window.
+
+<!-- todo: explain better -->
 
 # 3. Environment Setup
 
-*Note:* This section should contain enough information to allow someone else to
-reproduce *your* report. Share hardware and/or software setup relevant to your
-experiment. For example:
+## 3.1 Hardware Environment
 
-**Hardware Environment:**
-CPU, Memory, Storage, Network, Cloud / local / cluster, Any relevant micro-architectural details
+### Main setup
+All my experiments were run on a mac:
+- OS: MacOS 26.6.1 (Tahoe)
+- Kernel: Darwin Kernel Version 25.6.0
+- CPU: Apple M3 Pro (arm64)
+- RAM: 36G
 
-**Software Environment**
-OS version, Kernel version, Compiler version, Libraries, Dependencies, Paper artifact used (Yes/No; version/commit hash)
+### Alternative setup
+Some experiments were also run on a VM with this specifications, but simulations takes too much to run.
 
-**Configuration Parameters:**
+- OS: Debian 13.6 (Trixie)
+- Kernel: 6.12.100+deb13-amd64
+- CPU: 4xIntel Xeon E5-2620 v2 (virtualized in KVM)
+- RAM: 8.0 GiB (DDR3)
 
-- Workload configuration
-- Dataset
-- Runtime parameters and flags
 
-**Deviations from the Original Setup:**
+## 3.2 Software Environment
+- clang: Apple clang version 21.0.0 (using default mac aliasing so that it works by using `g++`)
+```shell
+myuser@mac $ g++ --version
+Apple clang version 21.0.0 (clang-2100.1.1.101)
+Target: arm64-apple-darwin25.6.0
+Thread model: posix
+InstalledDir: /Library/Developer/CommandLineTools/usr/bin
+```
+- make: GNU Make 3.81
+- python: Python 3.14.6
 
-Clearly describe any difference between papers and your experiment environment.
+## 3.3 Build
+The simulator and experiments are built by following this [wiki](https://github.com/nets-cs-pub-ro/NDP/wiki/NDP-Simulator)
 
-- Hardware differences
-- Software version differences
-- Dataset substitutions
-- Unavailable components
-
-Explain why these deviations were necessary.
-
-If something was **missing in the original paper**, state it. For example:
-
-> The paper does not specify X. We assumed Y (or explored range *a* to *b*).
+## 3.4 Deviations from the Original Setup
+To make the experiment work correctly some edits were made to the script that runs the experiment (`sim/EXAMPLES/incast_scaling/run.sh`):
+- changed shebang for scripts from `#!/bin/sh` to `#!/bin/bash`
+- Added `#include <algorithm>` to sim/parse_output.cpp to fix compilation under newer Clang/libc++ versions, which removed transitive inclusion of `<algorithm>` from other standard headers. [source](https://libcxx.llvm.org/DesignDocs/HeaderRemovalPolicy.html)
+- changed `python` to `python3`
+- Changed `sim/EXAMPLES/incast_scaling/process_data_incast_conns.py` to work with python3:
+  ```python
+  - print(conns, lasttimes[numflows/2], file=ofile);
+  - print(conns, lasttimes[numflows/2]);
+  + print(conns, lasttimes[numflows//2], file=ofile);
+  + print(conns, lasttimes[numflows//2]);
+  ```
+- Added a line on top of `run.sh` to remove previous results (otherwise the graphs shows multiple lines of same colors)
+  ```shell
+  + rm -f incast_ndp_completion_times_* ts_incast* bounces* *.pdf
+  ```
+- Changed the plot files to output the graphs as PNG instead of PDF
 
 # 4. Experiment Result
+
+## 4.1 Execution procedure
+1. Build the simulator
+  ```shell
+  cd sim
+  make
+  ```
+2. Build the topologies
+  ```shell
+  cd sim/datacenter
+  make
+  ```
+3. Run the experiment
+  ```shell
+  cd sim/EXAMPLES/incast_scaling
+  ./run.sh
+  ```
+4. Wait until finishes (on my setup it takes some hours)
+
+
+
+
+
+
+
+## 4.x Comparing results
+The results I obtained are not the same as the one in the paper (which again are different from the one included in the repository)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 > Explain how your experiment was conducted and then what results you acquired. 
 Afterwards, compare your results with those of the paper and state your

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Clean up any existing data files from previous runs to prevent duplicate data
-rm -f incast_ndp_completion_times_* ts_incast* bounces* *.pdf
+rm -f incast_ndp_completion_times_* ts_incast* bounces* *.pdf *.png
 
 flowsize=270000
 cwnd=1
