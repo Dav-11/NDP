@@ -113,6 +113,10 @@ class Packet {
     void set_route(const Route &route);
 
     //    void set_detour(PacketSink* n, int rewind) {_detour = n;_nexthop -= rewind;}
+
+#ifdef MY_CUSTOM_FLAG
+	void bounce_at_switch(const Packet& original_pkt);
+#endif
     
     string str() const;
  protected:

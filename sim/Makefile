@@ -1,10 +1,12 @@
 OBJS=eventlist.o tcppacket.o pipe.o queue.o queue_lossless.o queue_lossless_input.o queue_lossless_output.o ecnqueue.o tcp.o dctcp.o mtcp.o loggers.o logfile.o clock.o config.o network.o qcn.o exoqueue.o randomqueue.o cbr.o cbrpacket.o sent_packets.o ndp.o ndppacket.o eth_pause_packet.o tcp_transfer.o tcp_periodic.o compositequeue.o prioqueue.o cpqueue.o ndp_transfer.o compositeprioqueue.o switch.o dctcp_transfer.o fairpullqueue.o route.o ndptunnel.o ndptunnelpacket.o ccpacket.o cc.o 
-HDRS=network.h ndp.h queue_lossless.h queue_lossless_input.h queue_lossless_output.h compositequeue.h prioqueue.h cpqueue.h queue.h loggers.h loggertypes.h pipe.h eventlist.h config.h tcp.h dctcp.h mtcp.h sent_packets.h tcppacket.h ndppacket.h eth_pause_packet.h ndp_transfer.h compositeprioqueue.h ecnqueue.h switch.h dctcp_transfer.h ndptunnel.h ndptunnelpacket.h ccpacket.h cc.o 
+OFFLOAD_OBJS = eventlist.o tcppacket.o pipe.o queue.o queue_lossless.o queue_lossless_input.o queue_lossless_output.o ecnqueue.o tcp.o dctcp.o mtcp.o loggers.o logfile.o clock.o config.o network_offload.o qcn.o exoqueue.o randomqueue.o cbr.o cbrpacket.o sent_packets.o ndp_offload.o ndppacket.o eth_pause_packet.o tcp_transfer.o tcp_periodic.o compositequeue_offload.o prioqueue.o cpqueue_offload.o ndp_transfer.o compositeprioqueue_offload.o switch.o dctcp_transfer.o fairpullqueue.o route.o ndptunnel.o ndptunnelpacket.o ccpacket.o cc.o
+
+HDRS=network.h ndp.h queue_lossless.h queue_lossless_input.h queue_lossless_output.h compositequeue.h prioqueue.h cpqueue.h queue.h loggers.h loggertypes.h pipe.h eventlist.h config.h tcp.h dctcp.h mtcp.h sent_packets.h tcppacket.h ndppacket.h eth_pause_packet.h ndp_transfer.h compositeprioqueue.h ecnqueue.h switch.h dctcp_transfer.h ndptunnel.h ndptunnelpacket.h ccpacket.h cc.o
 
 CC=g++ 
 CFLAGS= -Wall -g
 
-all:	htsim lib parse_output htsim_dumbell_ndptunnel htsim_dumbell_cc
+all:	htsim lib libhtsim_nack_offload.a parse_output htsim_dumbell_ndptunnel htsim_dumbell_cc
 
 lib:	$(OBJS) $(HDRS)
 	ar -rvu libhtsim.a $(OBJS)
@@ -16,7 +18,7 @@ htsim:	$(OBJS) main.o
 	$(CC) $(CFLAGS) $(OBJS) main.o -o htsim
 
 clean:	
-	rm -f *.o htsim htsim_* libhtsim.a
+	rm -f *.o htsim htsim_* libhtsim.a libhtsim_nack_offload.a
 parse_output.o: parse_output.cpp libhtsim.a
 config.o:	config.cpp config.h
 switch.o: 	switch.cpp switch.h
@@ -58,8 +60,20 @@ htsim_dumbell_ndptunnel:        $(OBJS) main_dumbell_ndptunnel.o
 htsim_dumbell_cc:        $(OBJS) main_dumbell_cc.o 
 	$(CC) $(CFLAGS) $(OBJS) main_dumbell_cc.o -o htsim_dumbell_cc
 
-
-
-
 .cpp.o:
 	source='$<' object='$@' libtool=no depfile='$(DEPDIR)/$*.Po' tmpdepfile='$(DEPDIR)/$*.TPo' $(CXXDEPMODE) $(depcomp) $(CC) $(CFLAGS) -Wuninitialized  -c -o $@ `test -f $< || echo '$(srcdir)/'`$<
+
+# Target rule to compile the offloaded library
+libhtsim_nack_offload.a: $(OFFLOAD_OBJS)
+	ar -rvu libhtsim_nack_offload.a $(OFFLOAD_OBJS)
+# Individual compilation rules for the modified files
+network_offload.o: network.cpp $(HDRS)
+	$(CC) $(CFLAGS) -DMY_CUSTOM_FLAG -c network.cpp -o network_offload.o
+ndp_offload.o: ndp.cpp $(HDRS)
+	$(CC) $(CFLAGS) -DMY_CUSTOM_FLAG -c ndp.cpp -o ndp_offload.o
+compositequeue_offload.o: compositequeue.cpp $(HDRS)
+	$(CC) $(CFLAGS) -DMY_CUSTOM_FLAG -c compositequeue.cpp -o compositequeue_offload.o
+compositeprioqueue_offload.o: compositeprioqueue.cpp $(HDRS)
+	$(CC) $(CFLAGS) -DMY_CUSTOM_FLAG -c compositeprioqueue.cpp -o compositeprioqueue_offload.o
+cpqueue_offload.o: cpqueue.cpp $(HDRS)
+	$(CC) $(CFLAGS) -DMY_CUSTOM_FLAG -c cpqueue.cpp -o cpqueue_offload.o

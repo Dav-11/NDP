@@ -53,6 +53,10 @@ sim/EXAMPLES/incast_scaling/incast_ndp_completion_times_*
 sim/EXAMPLES/incast_scaling/ts_incast*
 sim/EXAMPLES/incast_scaling/bounces*
 
+sim/EXAMPLES/incast_scaling_nack_offload/incast_ndp_completion_times_*
+sim/EXAMPLES/incast_scaling_nack_offload/ts_incast*
+sim/EXAMPLES/incast_scaling_nack_offload/bounces*
+
 # project documentation
 SPECIFICATION.md
 

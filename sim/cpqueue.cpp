@@ -1,5 +1,6 @@
 // -*- c-basic-offset: 4; tab-width: 8; indent-tabs-mode: t -*-        
 #include "cpqueue.h"
+#include "ndppacket.h"
 #include <math.h>
 
 #include <iostream>
@@ -50,6 +51,17 @@ CutPayloadQueue::receivePacket(Packet& pkt)
     if (_queuesize+pkt.size() > _threshold) {
 	//strip packet the arriving packet
 	pkt.strip_payload();
+
+#ifdef MY_CUSTOM_FLAG
+	if (pkt.type() == NDP) {
+		NdpPacket* ndp_pkt = static_cast<NdpPacket*>(&pkt);
+		NdpNack* nack = NdpNack::newpkt(ndp_pkt->flow(), *ndp_pkt->route(), ndp_pkt->pacerno(), ndp_pkt->seqno(), 0, 0, ndp_pkt->path_id());
+		nack->dont_pull();
+		nack->bounce_at_switch(*ndp_pkt);
+		nack->sendOn();
+	}
+#endif
+
 	_num_stripped++;
 	pkt.flow().logTraffic(pkt,*this,TrafficLogger::PKT_TRIM);
 	if (_logger) _logger->logQueue(*this, QueueLogger::PKT_TRIM, pkt);

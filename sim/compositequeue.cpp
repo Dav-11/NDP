@@ -1,5 +1,6 @@
 // -*- c-basic-offset: 4; tab-width: 8; indent-tabs-mode: t -*-        
 #include "compositequeue.h"
+#include "ndppacket.h"
 #include <math.h>
 
 #include <iostream>
@@ -132,6 +133,18 @@ CompositeQueue::receivePacket(Packet& pkt)
 		//cout << "A [ " << _enqueued_low.size() << " " << _enqueued_high.size() << " ] STRIP" << endl;
 		//cout << "booted_pkt->size(): " << booted_pkt->size();
 		booted_pkt->strip_payload();
+
+#ifdef MY_CUSTOM_FLAG
+		if (booted_pkt->type() == NDP) {
+			NdpPacket* ndp_pkt = static_cast<NdpPacket*>(booted_pkt);
+			NdpNack* nack = NdpNack::newpkt(ndp_pkt->flow(), *ndp_pkt->route(), ndp_pkt->pacerno(), ndp_pkt->seqno(), 0, 0, ndp_pkt->path_id());
+			nack->dont_pull();
+			nack->bounce_at_switch(*ndp_pkt);
+			nack->sendOn();
+		}
+#endif
+
+
 		_num_stripped++;
 		booted_pkt->flow().logTraffic(*booted_pkt,*this,TrafficLogger::PKT_TRIM);
 		if (_logger) _logger->logQueue(*this, QueueLogger::PKT_TRIM, pkt);
@@ -186,6 +199,17 @@ CompositeQueue::receivePacket(Packet& pkt)
 	    //strip packet the arriving packet - low priority queue is full
 	    //cout << "B [ " << _enqueued_low.size() << " " << _enqueued_high.size() << " ] STRIP" << endl;
 	    pkt.strip_payload();
+
+#ifdef MY_CUSTOM_FLAG
+		if (pkt.type() == NDP) {
+			NdpPacket* ndp_pkt = static_cast<NdpPacket*>(&pkt);
+			NdpNack* nack = NdpNack::newpkt(ndp_pkt->flow(), *ndp_pkt->route(), ndp_pkt->pacerno(), ndp_pkt->seqno(), 0, 0, ndp_pkt->path_id());
+			nack->dont_pull();
+			nack->bounce_at_switch(*ndp_pkt);
+			nack->sendOn();
+		}
+#endif
+
 	    _num_stripped++;
 	    pkt.flow().logTraffic(pkt,*this,TrafficLogger::PKT_TRIM);
 	    if (_logger) _logger->logQueue(*this, QueueLogger::PKT_TRIM, pkt);

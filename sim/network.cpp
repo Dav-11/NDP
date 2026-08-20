@@ -201,3 +201,14 @@ void print_route(const Route& route) {
 }
 
 Logged::id_t Logged::LASTIDNUM = 1;
+
+#ifdef MY_CUSTOM_FLAG
+void
+Packet::bounce_at_switch(const Packet& original_pkt) {
+	assert(!_bounced);
+	assert(_route);
+	_bounced = true;
+	_is_header = true;
+	_nexthop = _route->size() - original_pkt.nexthop();
+}
+#endif
