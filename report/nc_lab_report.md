@@ -23,12 +23,16 @@ NDP is designed to work in datacenters using redundant (clos-like) topologies, a
 
 ## 1.1 The problem
 The problem this paper tries to address is the design of an architecture that can target both low latency and high throughput. In datacenter networks latency sensitive workloads and high throughput workloads coexist. Some examples of these workloads can be:
-- High throughput workloads:
+
+High throughput workloads:
+
   - Remote disks in virtualization (storage for VMs is not located on the same server as the VM).
   - Distributed Storage (Storage is replicated between servers).
   - Backups and replications.
   - Data movement between computing nodes in AI training workload.
-- Latency sensitive workloads:
+
+Latency sensitive workloads:
+
   - Database queries
   - RPC requests
   - Video/audio streaming
@@ -55,6 +59,7 @@ NDP maximizes Clos topology utilization via per-packet multipath spraying, where
 ## 1.3 Contributions
 The paper's main contribution is the architecture's design.
 Within the code repository for this project, the following source artifacts are provided:
+
 - The code for the simulations used in the paper
 - POC implementations of the NDP switch (using P4 and netFPGA)
 - POC implementation of the host code using DPDK.
@@ -69,22 +74,16 @@ In this result, the authors try to stress test the resistence of the architectur
 ## 2.1 Latency increase in incast scenarios (Incast sensitivity)
 
 
-<center>
-  <img
-    alt="Incast sensitivity: Percent overhead of last flow to finish as a function of size of incast for different initial window sizes (IW=1, IW=10, IW=23)"
-    src="figures/incast_sensitivity_orig.png"
-    style="width:60%;"
-    />
-  <p>Figure 20 a: Incast sensitivity (percent overhead of the last flow to finish above the optimal completion time) as a function of the number of incast flows.</p>
-</center>
+![Figure 20 a: Incast sensitivity (percent overhead of the last flow to finish above the optimal completion time) as a function of the number of incast flows.](figures/incast_sensitivity_orig.png){width=60%}
 
 Fig. 20a shows the time overhead as a percentage of the best theoretical last-flow completion time; this assumes the link to the receiver is completely saturated until the last flow finishes, and every packet is received only once.
-With a 23 packet IW, small incasts see the worst overheads, but still finish within 2% of optimal.
-For larger incasts, the time overhead is negligible.
-
 To calculate this percent overhead, the gnuplot script uses the formula:
-$$100 \times \frac{\text{Tail FCT}}{\text{Optimal FCT}} - 100$$
-where the optimal flow completion time is computed as the total bytes of all flows serialized over the bottleneck link (e.g. $N \times 271,920 \text{ bytes} \times 8 / 10\text{Gbps}$) plus one path RTT ($42.256\ \mu\text{s}$).
+
+$$
+100 \times \frac{\text{Tail FCT}}{\text{Optimal FCT}} - 100
+$$
+
+where the optimal flow completion time is computed as the total bytes of all flows serialized over the bottleneck link plus one path RTT.
 
 For $IW=23$, a small incast of around 8 senders creates a minor overhead peak because multiple packets hit the switch queues at once, leading to trimming and NACK handling that introduces minor delays. For larger incasts, the queue size is negligible compared to the total flow size, and the receiver's link is kept 100% busy, making the time overhead drop close to 0%.
 If we use $IW=1$, the sender has to wait for pulls, so for very small incasts (1-8 flows) the link capacity cannot be filled, which results in a significantly larger flow completion time compared to optimal.
@@ -93,27 +92,22 @@ If we use $IW=1$, the sender has to wait for pulls, so for very small incasts (1
 ## 2.2 Packet retransmission in incast scenarios (Incast overhead)
 
 
-<center>
-  <img
-    alt="Incast overhead: Retransmissions per packet (Bounces vs NACKs) for different initial window sizes"
-    src="figures/incast_overhead_orig.png"
-    style="width:60%;"
-    />
-  <p>Figure 20 b: Incast overhead (mean number of retransmissions per packet triggered by bounces or NACKs) as a function of the number of incast flows.</p>
-</center>
+![Figure 20 b: Incast overhead (mean number of retransmissions per packet triggered by bounces or NACKs) as a function of the number of incast flows.](figures/incast_overhead_orig.png){width=60%}
 
 Fig. 20b shows the mean number of retransmissions per packet, and the mechanism (return-to-sender bounce or NACK) by which the sender was informed of the need to resend. For smaller incasts, NACKs are the main mechanism.
 Above 100 flows, return-to-sender becomes the main mechanism.
 Above 2000 flows, some packets suffer a second return-to-sender before getting through.
 Even with the largest incasts and a 23 packet IW, the mean number of retransmissions barely exceeds one.
-However, it would make sense for applications that know they will create a large incast to reduce the initial window.
 
 NDP achieves this behavior by utilizing two mechanisms inside switches when buffers overflow:
+
 - **Packet trimming**: Standard switches have small queues (e.g. 8 packets). When a queue overflows, the switch drops the payload of incoming data packets and forwards only the 60-byte header to the receiver. The header is put in a higher priority queue. When the receiver gets the trimmed header, it realizes a packet was lost and sends a NACK back to the sender so it can pull the missing packet.
 - **Return-to-sender (bounce)**: If the congestion is so severe that even the switch's high-priority header/control queue overflows (which happens when there are many concurrent flows, e.g. $>100$ flows), standard NDP switches bounce the trimmed header back to the sender. This tells the sender immediately to resend, bypassing the receiver NACK.
 
 The retransmission rate is computed as:
+
 $$\text{Retransmissions per packet} = \frac{\text{Total Bounces or NACKs}}{\text{Total packets sent} \ (N \times 30)}$$
+
 where $N$ is the number of flows and 30 is the number of packets per flow.
 
 As shown in the graph, for smaller incasts, NACKs are the main way senders find out about drops. But for large incasts, the header queue overflows, so return-to-sender bounces become the dominant mechanism. If we use $IW=1$, the aggregate rate is low enough that we never overflow the header queues, so bounces remain at zero.
@@ -124,6 +118,7 @@ As shown in the graph, for smaller incasts, NACKs are the main way senders find 
 
 ### Main setup
 All primary simulation sweeps were conducted on a macOS host:
+
 - OS: MacOS 26.6.1 (Tahoe)
 - Kernel: Darwin Kernel Version 25.6.0
 - CPU: Apple M3 Pro (arm64)
@@ -139,8 +134,9 @@ Some experiments were also run on a VM with these specifications, but simulation
 
 
 ## 3.2 Software Environment
+
 - clang: Apple clang version 21.0.0 (using default MacOS aliasing so that it compiles using `g++`)
-```shell
+```bash
 myuser@mac $ g++ --version
 Apple clang version 21.0.0 (clang-2100.1.1.101)
 Target: arm64-apple-darwin25.6.0
@@ -155,10 +151,12 @@ The simulator and experiments are built by following this [wiki](https://github.
 
 ## 3.4 Deviations from the Original Setup
 To make the experiment work correctly some edits were made to the script that runs the experiment (`sim/EXAMPLES/incast_scaling/run.sh`):
+
 - changed shebangs from `#!/bin/sh` to `#!/bin/bash`
 - Added `#include <algorithm>` to sim/parse_output.cpp to fix compilation under newer Clang/libc++ versions, which removed transitive inclusion of `<algorithm>` from other standard headers. [source](https://libcxx.llvm.org/DesignDocs/HeaderRemovalPolicy.html)
 - changed `python` to `python3`
 - Changed `sim/EXAMPLES/incast_scaling/process_data_incast_conns.py` to work with python3:
+  
   ```python
   - print(conns, lasttimes[numflows/2], file=ofile);
   - print(conns, lasttimes[numflows/2]);
@@ -166,7 +164,8 @@ To make the experiment work correctly some edits were made to the script that ru
   + print(conns, lasttimes[numflows//2]);
   ```
 - Added a line on top of `run.sh` to remove previous results (otherwise the graphs shows multiple lines of same colors)
-  ```shell
+  
+  ```bash
   + rm -f incast_ndp_completion_times_* ts_incast* bounces* *.pdf
   ```
 - Changed the plot files to output the graphs as PNG instead of PDF
@@ -174,21 +173,27 @@ To make the experiment work correctly some edits were made to the script that ru
 # 4. Experiment Result
 
 ## 4.1 Execution procedure
+
 1. Build the simulator
-  ```shell
+  
+  ```bash
   cd sim
   make
   ```
+
 2. Build the topologies
-  ```shell
+  
+  ```bash
   cd sim/datacenter
   make
   ```
 3. Run the experiment
-  ```shell
+  
+  ```bash
   cd sim/EXAMPLES/incast_scaling
   ./run.sh
   ```
+
 4. Wait until finishes (on my setup it takes some hours)
 
 
@@ -197,49 +202,13 @@ Since this experiment is a simulation, there wasn't much to do other than buildi
 The results I obtained are not the same as the ones in the paper (which again are different from the ones included in the repository)
 
 
-<div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; wrap: nowrap;">
-  
-  <!-- First Image -->
-  <div style="text-align: center; width: 48%;">
-    <img
-      alt="paper's incast_sensitivity"
-      src="figures/incast_sensitivity_orig.png"
-      style="width: 100%;"
-    />
-    <!-- <p style="font-size: 0.9em; color: #555;">Figure 20 b: Method A throughput</p> -->
-  </div>
-  <!-- Second Image -->
-  <div style="text-align: center; width: 48%;">
-    <img
-      alt="mine incast_sensitivity"
-      src="figures/incast_sensitivity.png"
-      style="width: 100%;"
-    />
-    <!-- <p style="font-size: 0.9em; color: #555;">Figure 20 c: Method B throughput</p> -->
-  </div>
-</div>
+| Paper's Version | My Mac |
+| :---: | :---: |
+| ![Paper's Incast Sensitivity](figures/incast_sensitivity_orig.png){width=100%} | ![My Mac Incast Sensitivity](figures/incast_sensitivity.png){width=100%} |
 
-<div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; wrap: nowrap;">
-  
-  <!-- First Image -->
-  <div style="text-align: center; width: 48%;">
-    <img
-      alt="paper's incast_overhead"
-      src="figures/incast_overhead_orig.png"
-      style="width: 100%;"
-    />
-    <!-- <p style="font-size: 0.9em; color: #555;">Figure 20 b: Method A throughput</p> -->
-  </div>
-  <!-- Second Image -->
-  <div style="text-align: center; width: 48%;">
-    <img
-      alt="mine incast_overhead"
-      src="figures/incast_overhead.png"
-      style="width: 100%;"
-    />
-    <!-- <p style="font-size: 0.9em; color: #555;">Figure 20 c: Method B throughput</p> -->
-  </div>
-</div>
+| Paper's Version | My Mac |
+| :---: | :---: |
+| ![Paper's Incast Overhead](figures/incast_overhead_orig.png){width=100%} | ![My Mac Incast Overhead](figures/incast_overhead.png){width=100%} |
 
 
 
@@ -260,39 +229,13 @@ the random seed is initialized with the current time. This seed is then used to 
 
 I replayed the same test with the same procedure on a different system (debian VM), to see if the simulation would have different results, here are shown the results on all three systems:
 
-<table style="width: 100%; border: none; border-collapse: collapse;">
-  <tr style="border: none;">
-    <td style="width: 33%; text-align: center; border: none; padding: 10px;">
-      <img src="figures/incast_sensitivity_orig.png" style="width: 80%;" alt="Method A" />
-      <p style="font-size: 0.9em; margin-top: 5px;">Paper's version</p>
-    </td>
-    <td style="width: 33%; text-align: center; border: none; padding: 10px;">
-      <img src="figures/incast_sensitivity_drakenguard.png" style="width: 80%;" alt="Method B" />
-      <p style="font-size: 0.9em; margin-top: 5px;">Debian Server</p>
-    </td>
-    <td style="width: 33%; text-align: center; border: none; padding: 10px;">
-      <img src="figures/incast_sensitivity.png" style="width: 80%;" alt="Method B" />
-      <p style="font-size: 0.9em; margin-top: 5px;">My Mac</p>
-    </td>
-  </tr>
-</table>
+| Paper's version | Debian Server | My Mac |
+| :---: | :---: | :---: |
+| ![Method A](figures/incast_sensitivity_orig.png){width=100%} | ![Method B](figures/incast_sensitivity_drakenguard.png){width=100%} | ![Method B](figures/incast_sensitivity.png){width=100%} |
 
-<table style="width: 100%; border: none; border-collapse: collapse;">
-  <tr style="border: none;">
-    <td style="width: 33%; text-align: center; border: none; padding: 10px;">
-      <img src="figures/incast_overhead_orig.png" style="width: 80%;" alt="Method A" />
-      <p style="font-size: 0.9em; margin-top: 5px;">Paper's version</p>
-    </td>
-    <td style="width: 33%; text-align: center; border: none; padding: 10px;">
-      <img src="figures/incast_overhead_drakenguard.png" style="width: 80%;" alt="Method B" />
-      <p style="font-size: 0.9em; margin-top: 5px;">Debian Server</p>
-    </td>
-    <td style="width: 33%; text-align: center; border: none; padding: 10px;">
-      <img src="figures/incast_overhead.png" style="width: 80%;" alt="Method B" />
-      <p style="font-size: 0.9em; margin-top: 5px;">My Mac</p>
-    </td>
-  </tr>
-</table>
+| Paper's version | Debian Server | My Mac |
+| :---: | :---: | :---: |
+| ![Method A](figures/incast_overhead_orig.png){width=100%} | ![Method B](figures/incast_overhead_drakenguard.png){width=100%} | ![Method B](figures/incast_overhead.png){width=100%} |
 
 There are some visible differences, especially in the first graph when using a low (1-10) number of incast flows. The differences in this region can be attributed to the random seed initialization. As explained in the code, the seed is set to `srand(time(NULL))` and runs are not averaged. With a very low number of flows (e.g. 1 to 10), there are only a few samples, so any random path collision or queue drop caused by the seed has a huge relative impact on the tail flow completion time. This creates visible spikes or dips. When we scale to thousands of flows, the large number of flows averages out the random path variance, making the results much more stable and consistent across different runs and systems.
 
@@ -353,6 +296,7 @@ This exploration aims to evaluate whether early, switch-generated NACKs can decr
 To implement this idea, I modified the NDP simulation code to offload NACK generation to the switches. I wrapped all my modifications in a compilation flag `MY_CUSTOM_FLAG` and added a new Makefile target to compile a separate binary named `htsim_ndp_incast_shortflows_nack_offload`.
 
 Here is how the implementation works:
+
 - **Switch-side NACK Generation:** When a packet is trimmed by the switch queue (`compositequeue.cpp` or `compositeprioqueue.cpp`), the switch immediately creates a `NdpNack` packet and sends it back to the sender. To prevent the sender from immediately triggering a packet retransmission before the pacing window allows it, I disabled the pull flag on this switch-generated NACK by calling `dont_pull()`.
 - **Switch-to-Sender Routing:** In `network.cpp`, I implemented `bounce_at_switch(const Packet& original_pkt)`. This method configures the new NACK packet's routing state so that the simulator routes it backwards along the reverse path from the switch's current position.
 - **Receiver-side Pacing Integration:** The trimmed packet header still travels forward to the receiver. When the receiver gets the header, it passes the event to its `NdpPullPacer` in `ndp.cpp`. I modified `NdpPullPacer::sendPacket` so that for NACK packets, the pacer immediately frees the receiver-generated NACK (so it is never sent onto the wire) and only schedules a paced `NdpPull` packet to be sent back to the sender.
@@ -362,14 +306,17 @@ Here is how the implementation works:
 
 To evaluate the performance of this modification, I ran the incast scaling experiment using the offloaded binary:
 1. Compiled the offloaded library and binary:
-   ```shell
+   
+   ```bash
    cd sim
    make libhtsim_nack_offload.a
    cd datacenter
    make htsim_ndp_incast_shortflows_nack_offload
    ```
+
 2. Ran the simulation sweep from 1 to 8,000 flows:
-   ```shell
+   
+   ```bash
    cd sim/EXAMPLES/incast_scaling_nack_offload
    ./run.sh
    ```
@@ -378,18 +325,12 @@ Below are the results comparing the offloaded version against the standard (vani
 
 ### 5.3.1 Retransmission Overhead (Incast Overhead)
 
-<div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; wrap: nowrap;">
-  <div style="text-align: center; width: 48%;">
-    <img alt="Standard Incast Overhead" src="figures/incast_overhead.png" style="width: 100%;" />
-    <p style="font-size: 0.9em; margin-top: 5px;">Standard NDP (My Mac)</p>
-  </div>
-  <div style="text-align: center; width: 48%;">
-    <img alt="Offloaded Incast Overhead" src="figures/incast_overhead_offload.png" style="width: 100%;" />
-    <p style="font-size: 0.9em; margin-top: 5px;">Offloaded NACK NDP (My Mac)</p>
-  </div>
-</div>
+| Standard NDP (My Mac) | Offloaded NACK NDP (My Mac) |
+| :---: | :---: |
+| ![Standard Incast Overhead](figures/incast_overhead.png){width=100%} | ![Offloaded Incast Overhead](figures/incast_overhead_offload.png){width=100%} |
 
 In the offloaded NACK version:
+
 - **RTX (Nacks) remains flat:** In standard NDP, as the incast size scales, the switch header queue overflows, causing trimmed header packets to be dropped or bounced before they reach the receiver. Consequently, the receiver generates fewer NACKs, and `RTX (Nacks)` drops to zero. In the offloaded version, since NACKs are generated at the switch *before* the header queue, they are always received by the sender, keeping the curve flat.
 - **RTX (Bounces) is lower:** The maximum number of bounces at 8,000 flows drops from ~1.2 to ~0.8. Senders learn about drops at switch-level speeds (half the RTT), allowing them to adjust their state faster and reduce subsequent congestion.
 
@@ -397,18 +338,12 @@ In the offloaded NACK version:
 
 ### 5.3.2 Flow Completion Time (Incast Sensitivity)
 
-<div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; wrap: nowrap;">
-  <div style="text-align: center; width: 48%;">
-    <img alt="Standard Incast Sensitivity" src="figures/incast_sensitivity.png" style="width: 100%;" />
-    <p style="font-size: 0.9em; margin-top: 5px;">Standard NDP (My Mac)</p>
-  </div>
-  <div style="text-align: center; width: 48%;">
-    <img alt="Offloaded Incast Sensitivity" src="figures/incast_sensitivity_offload.png" style="width: 100%;" />
-    <p style="font-size: 0.9em; margin-top: 5px;">Offloaded NACK NDP (My Mac)</p>
-  </div>
-</div>
+| Standard NDP (My Mac) | Offloaded NACK NDP (My Mac) |
+| :---: | :---: |
+| ![Standard Incast Sensitivity](figures/incast_sensitivity.png){width=100%} | ![Offloaded Incast Sensitivity](figures/incast_sensitivity_offload.png){width=100%} |
 
 The FCT sensitivity graph shows highly distorted behavior for the offloaded version:
+
 - **Overhead Spikes to Infinity:** For $IW=23$ at ~68 flows and $IW=10$ at ~125 flows, the overhead shoots vertically off the chart. This is due to **NACK implosion**. At these scales, the switch trims a massive number of packets simultaneously and generates a large burst of NACKs. This burst congests the reverse links, causing high drop rates of control packets (NACKs and PULLs). Senders lose their pacing credit and stall, waiting for the retransmission timer ($RTO = 20\text{ ms}$), which heavily inflates completion times.
 - **Blue Line Drops Below Zero:** For $IW=1$, the curve suddenly drops off the bottom of the chart at ~1,200 flows. Because of massive congestion and RTO backoffs, the vast majority of flows fail to complete before the $10\text{-second}$ simulation cutoff. The python parsing script only calculates statistics for the few lucky flows that completed early (finishing in under $0.3\text{ seconds}$), leading to an artificially low recorded maximum FCT. In reality, the network suffered a severe throughput collapse.
 
