@@ -306,61 +306,132 @@ Overall the patterns shown are very similar and so we can say that the results a
 
 ## 5.1 The idea
 
-The idea I wanted to explore was the impact of offloading the `NACK` packet send to the first switch that trims the packet. The NDP architecture in the paper states that if a packet gets trimmed, the headers needs to reach the destination before a NACK packet is generated and sent back to the source.
+The idea I wanted to explore was "what would happen if I were to offload the `NACK` packet send to the first switch that trims the packet". 
+
+The NDP architecture in the paper states that if a packet gets trimmed, the headers needs to reach the destination before a NACK packet is generated and sent back to the source.
 
 I'll explain this better by showing a timeline diagram of a transaction where pakets gets trimmed (in this case, two switches are shown, but it can be any number > 1).
 
 <!-- todo: create timeline diagram for transaction -->
 
+```mermaid
+sequenceDiagram
+  Source->>SW1: pkg
+  SW1->>SW1: pkg (drops)
+  SW1-->>SW2: Header
+  SW2-->>Sink: Header
+  
+  Sink-->>SW2: NACK
+  SW2-->>SW1: NACK
+  SW1-->>Source: NACK
+
+  Source->>Source: Prepares pkg for resend
+
+  Sink-->>SW2: PULL
+  SW2-->>SW1: PULL
+  SW1-->>Source: PULL
+
+  Source->>SW1: pkg
+  SW1->>SW2: pkg
+  SW2->>Sink: pkg
+```
+
+
 I was curious to understand why the NACK packet needed to be sent by the receiver and could not be sent from the switch itself, by having the switch send it, it would decrease the number of packets circulating inside the network, which can be esecially interesting in heavy incast scenarios, as they are also scenarios where a lots of packets gets trimmed. 
 
 ## 5.2 How
 
-As previously stated, the incast scenario was a good scenario to test how this change would affect the system as it ia an edge case where a lot of trimming happens and a lot of packets are going around. I thougth that reducing the number of packets flowing and especially having them sent back to the senders by the first switch that trims it would improve something.
+To implement this idea, I modified the NDP simulation code to offload NACK generation to the switches. I wrapped all my modifications in a compilation flag `MY_CUSTOM_FLAG` and added a new Makefile target to compile a separate binary named `htsim_ndp_incast_shortflows_nack_offload`.
 
-So 
+Here is how the implementation works:
+- **Switch-side NACK Generation:** When a packet is trimmed by the switch queue (`compositequeue.cpp` or `compositeprioqueue.cpp`), the switch immediately creates a `NdpNack` packet and sends it back to the sender. To prevent the sender from immediately triggering a packet retransmission before the pacing window allows it, I disabled the pull flag on this switch-generated NACK by calling `dont_pull()`.
+- **Switch-to-Sender Routing:** In `network.cpp`, I implemented `bounce_at_switch(const Packet& original_pkt)`. This method configures the new NACK packet's routing state so that the simulator routes it backwards along the reverse path from the switch's current position.
+- **Receiver-side Pacing Integration:** The trimmed packet header still travels forward to the receiver. When the receiver gets the header, it passes the event to its `NdpPullPacer` in `ndp.cpp`. I modified `NdpPullPacer::sendPacket` so that for NACK packets, the pacer immediately frees the receiver-generated NACK (so it is never sent onto the wire) and only schedules a paced `NdpPull` packet to be sent back to the sender.
+- **Sender-side Handling:** In `NdpSrc::processNack` (`ndp.cpp`), since the incoming switch NACK has its pull flag disabled, the sender only adds the lost packet to its retransmission queue (`_rtx_queue`) without triggering a send. Later, when the paced `NdpPull` arrives, it triggers the actual transmission, preserving the original pacing loop.
 
+## 5.3 Methodology and Result
 
-In this project you are required to also explore a research question of your own. Either:
+To evaluate the performance of this modification, I ran the incast scaling experiment using the offloaded binary:
+1. Compiled the offloaded library and binary:
+   ```shell
+   cd sim
+   make libhtsim_nack_offload.a
+   cd datacenter
+   make htsim_ndp_incast_shortflows_nack_offload
+   ```
+2. Ran the simulation sweep from 1 to 8,000 flows:
+   ```shell
+   cd sim/EXAMPLES/incast_scaling_nack_offload
+   ./run.sh
+   ```
 
-1. Take the same test with different input workload or a variation of a test that is not present in the paper and comment the results you obtain
-1. Implement a new feature on top of the system you evaluated and show a figure showing the performance
+Below are the results comparing the offloaded version against the standard (vanilla) NDP implementation:
 
-Discuss which approach you take, and what you explored. Explain what was your
-motivation and importance of your question.
+### 5.3.1 Retransmission Overhead (Incast Overhead)
 
-## 5.3. Methodology and Result
+<div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; wrap: nowrap;">
+  <div style="text-align: center; width: 48%;">
+    <img alt="Standard Incast Overhead" src="figures/incast_overhead.png" style="width: 100%;" />
+    <p style="font-size: 0.9em; margin-top: 5px;">Standard NDP (My Mac)</p>
+  </div>
+  <div style="text-align: center; width: 48%;">
+    <img alt="Offloaded Incast Overhead" src="figures/incast_overhead_offload.png" style="width: 100%;" />
+    <p style="font-size: 0.9em; margin-top: 5px;">Offloaded NACK NDP (My Mac)</p>
+  </div>
+</div>
 
-Report the experiment you designed for answering the question and share the
-result you got.
-
-Include:
-
-- Graph(s) or table(s)
-- How the experiment was conducted (share the details)
-- What did you discover?
-
-# 6. Reproducibility Assessment of the Paper
-
-Evaluate the paper itself:
-
-- Was the methodology clearly described?
-- Was the artifact usable?
-- How difficult was reproduction?
-
-# 7. Conclusion
-
-Conclude the report by mentioning the takeaways of experiments you did
-
+In the offloaded NACK version:
+- **RTX (Nacks) remains flat:** In standard NDP, as the incast size scales, the switch header queue overflows, causing trimmed header packets to be dropped or bounced before they reach the receiver. Consequently, the receiver generates fewer NACKs, and `RTX (Nacks)` drops to zero. In the offloaded version, since NACKs are generated at the switch *before* the header queue, they are always received by the sender, keeping the curve flat.
+- **RTX (Bounces) is lower:** The maximum number of bounces at 8,000 flows drops from ~1.2 to ~0.8. Senders learn about drops at switch-level speeds (half the RTT), allowing them to adjust their state faster and reduce subsequent congestion.
 
 ---
 
-# Appendix
+### 5.3.2 Flow Completion Time (Incast Sensitivity)
+
+<div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; wrap: nowrap;">
+  <div style="text-align: center; width: 48%;">
+    <img alt="Standard Incast Sensitivity" src="figures/incast_sensitivity.png" style="width: 100%;" />
+    <p style="font-size: 0.9em; margin-top: 5px;">Standard NDP (My Mac)</p>
+  </div>
+  <div style="text-align: center; width: 48%;">
+    <img alt="Offloaded Incast Sensitivity" src="figures/incast_sensitivity_offload.png" style="width: 100%;" />
+    <p style="font-size: 0.9em; margin-top: 5px;">Offloaded NACK NDP (My Mac)</p>
+  </div>
+</div>
+
+The FCT sensitivity graph shows highly distorted behavior for the offloaded version:
+- **Overhead Spikes to Infinity:** For $IW=23$ at ~68 flows and $IW=10$ at ~125 flows, the overhead shoots vertically off the chart. This is due to **NACK implosion**. At these scales, the switch trims a massive number of packets simultaneously and generates a large burst of NACKs. This burst congests the reverse links, causing high drop rates of control packets (NACKs and PULLs). Senders lose their pacing credit and stall, waiting for the retransmission timer ($RTO = 20\text{ ms}$), which heavily inflates completion times.
+- **Blue Line Drops Below Zero:** For $IW=1$, the curve suddenly drops off the bottom of the chart at ~1,200 flows. Because of massive congestion and RTO backoffs, the vast majority of flows fail to complete before the $10\text{-second}$ simulation cutoff. The python parsing script only calculates statistics for the few lucky flows that completed early (finishing in under $0.3\text{ seconds}$), leading to an artificially low recorded maximum FCT. In reality, the network suffered a severe throughput collapse.
+
+### 5.3.3 What I Discovered
+
+Offloading NACK generation to the switches breaks the fundamental pacing loop of the NDP architecture. In standard NDP, receiver-side serialization naturally spaces out NACKs and PULLs at the bottleneck link speed. By offloading NACKs to the switch, we bypass this serialization and trigger a **NACK implosion** on the reverse path. This congests the control path, drops pacing credits, and causes flows to deadlock into timeout recovery, showing that receiver-side NACK generation is critical for NDP stability.
+
+# 6. Reproducibility Assessment of the Paper
+
+<!-- Evaluate the paper itself:
+
+- Was the methodology clearly described?
+- Was the artifact usable?
+- How difficult was reproduction? -->
+
+The paper had many simulation inside, the one I chose was clearly explained as to how to read the graph and why was it chosen.
+
+I would have not been able to recreate the graph by only reading the paper, but there was a repository with all the code inside, and I had to do very few changes to make it work. The code was clearly documented and structured and it was easy to understand how it work.
+
+# 7. Conclusion
+
+This replication project and subsequent exploration of the NDP architecture have provided valuable insights into the design of low-latency, high-throughput datacenter transport protocols. Having previously focused primarily on the computing and systems architecture side of datacenters, exploring transport-layer design was something new and interesting. Prior to this project, even the idea of successfully challenging and replacing established protocols like TCP was absurd to me. I still do not think I would be able to that, or at least not without extensive studies, but knowing it is something that it has been done can make me think of new protocols if I were to design a datacenter deployment. Furthermore, I was intrigued by the idea of co-designing the protocol and the hardware handling of the packets by switches and the host. This paper shows how you can achieve great results by changing all the elements in the networking stack (hosts & switches in this case).
+
+My custom experiment with switch-side NACK offloading instead surprised me quite significantly. Although I initially hypothesized that notifying senders of packet loss faster would improve performance, the simulation revealed that bypassing receiver-side serialization instead triggers a severe control-path collapse (NACK implosion). This result highlights that transport design cannot merely focus on minimizing latency in isolation; rather, it must carefully preserve the network's overall pacing equilibrium. Ultimately, this work emphasizes the complexity of coordinating distributed hosts and switches, demonstrating that local optimizations at the switch level can inadvertently disrupt global feedback loops and destabilize the entire transport architecture.
+
+
+<!-- # Appendix
 
 You are asked to write this report using Markdown. You can find a cheat sheet
 of Markdown syntax at this [link](https://rust-lang.github.io/mdBook/format/markdown.html).
 
 For generating a PDF file from your report you can use a tool of your choice.
 *md2pdf* is one such tool. See this [link](https://pypi.org/project/md2pdf/)
-for more information about it. You can also use an online editor such as [this](https://www.md2pdf.io/).
+for more information about it. You can also use an online editor such as [this](https://www.md2pdf.io/). -->
 
