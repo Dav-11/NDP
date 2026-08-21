@@ -22,7 +22,7 @@ NDP is designed to work in datacenters using redundant (clos-like) topologies, a
 
 
 ## 1.1 The problem
-The problem this paper tries to address is the design of an architecture that can target both low latency and high throughput. In datacenter networks latency sensitive workloads and high throughput workloads coexists. Some examples of these workloads can be:
+The problem this paper tries to address is the design of an architecture that can target both low latency and high throughput. In datacenter networks latency sensitive workloads and high throughput workloads coexist. Some examples of these workloads can be:
 - High throughput workloads:
   - Remote disks in virtualization (storage for VMs is not located on the same server as the VM).
   - Distributed Storage (Storage is replicated between servers).
@@ -54,8 +54,8 @@ NDP maximizes Clos topology utilization via per-packet multipath spraying, where
 
 ## 1.3 Contributions
 The paper's main contribution is the architecture's design.
-Inside the code repository for this project there are:
-- the code for the simulations used in the paper
+Within the code repository for this project, the following source artifacts are provided:
+- The code for the simulations used in the paper
 - POC implementations of the NDP switch (using P4 and netFPGA)
 - POC implementation of the host code using DPDK.
 
@@ -64,7 +64,7 @@ Inside the code repository for this project there are:
 
 This report is mainly focused on the **Large scale incast** experiment, which can be found in chapter 6.2 of the paper.
 
-In this result, the authors try to stress test the resistence of the architecture in extreme incast conditions, and measure the time overhead (Fig. 20a) and the number of retransmitted packets (Fig. 20b). In both figures the x axis is the number of incast flows, ranging from 1 (no incast) to 8.000 flows, each of 30 pakets (270.000 Bytes).
+In this result, the authors try to stress test the resistence of the architecture in extreme incast conditions, and measure the time overhead (Fig. 20a) and the number of retransmitted packets (Fig. 20b). In both figures the x axis is the number of incast flows, ranging from 1 (no incast) to 8,000 flows, each of 30 packets (270,000 Bytes).
 
 ## 2.1 Latency increase in incast scenarios (Incast sensitivity)
 
@@ -123,7 +123,7 @@ As shown in the graph, for smaller incasts, NACKs are the main way senders find 
 ## 3.1 Hardware Environment
 
 ### Main setup
-All my experiments were run on a mac:
+All primary simulation sweeps were conducted on a macOS host:
 - OS: MacOS 26.6.1 (Tahoe)
 - Kernel: Darwin Kernel Version 25.6.0
 - CPU: Apple M3 Pro (arm64)
@@ -139,7 +139,7 @@ Some experiments were also run on a VM with these specifications, but simulation
 
 
 ## 3.2 Software Environment
-- clang: Apple clang version 21.0.0 (using default macOS aliasing so that it compiles using `g++`)
+- clang: Apple clang version 21.0.0 (using default MacOS aliasing so that it compiles using `g++`)
 ```shell
 myuser@mac $ g++ --version
 Apple clang version 21.0.0 (clang-2100.1.1.101)
@@ -155,7 +155,7 @@ The simulator and experiments are built by following this [wiki](https://github.
 
 ## 3.4 Deviations from the Original Setup
 To make the experiment work correctly some edits were made to the script that runs the experiment (`sim/EXAMPLES/incast_scaling/run.sh`):
-- changed shebang for scripts from `#!/bin/sh` to `#!/bin/bash`
+- changed shebangs from `#!/bin/sh` to `#!/bin/bash`
 - Added `#include <algorithm>` to sim/parse_output.cpp to fix compilation under newer Clang/libc++ versions, which removed transitive inclusion of `<algorithm>` from other standard headers. [source](https://libcxx.llvm.org/DesignDocs/HeaderRemovalPolicy.html)
 - changed `python` to `python3`
 - Changed `sim/EXAMPLES/incast_scaling/process_data_incast_conns.py` to work with python3:
@@ -243,7 +243,7 @@ The results I obtained are not the same as the ones in the paper (which again ar
 
 
 
-The two results are different but they show the same patterns. All tests are initialized with random seeds so some differences are expected:
+Although the two sets of results exhibit minor variations, they follow the same qualitative patterns. All tests are initialized with random seeds so some differences are expected:
 
 inside `sim/datacenter/main_ndp_incast_shortflows.cpp` at line 130:
 ```C
@@ -306,11 +306,11 @@ Overall the patterns shown are very similar and so we can say that the results a
 
 ## 5.1 The idea
 
-The idea I wanted to explore was "what would happen if I were to offload the `NACK` packet send to the first switch that trims the packet". 
+The idea I wanted to explore was "what would happen if I were to offload the `NACK` packet send to the first switch that trims the packet".
 
 The NDP architecture in the paper states that if a packet gets trimmed, the headers needs to reach the destination before a NACK packet is generated and sent back to the source.
 
-I'll explain this better by showing a timeline diagram of a transaction where pakets gets trimmed (in this case, two switches are shown, but it can be any number > 1).
+I'll explain this better by showing a timeline diagram of a transaction where packets gets trimmed (in this case, two switches are shown, but it can be any number > 1).
 
 <!-- todo: create timeline diagram for transaction -->
 
@@ -337,9 +337,9 @@ sequenceDiagram
 ```
 
 
-I was curious to understand why the NACK packet needed to be sent by the receiver and could not be sent from the switch itself, by having the switch send it, it would decrease the number of packets circulating inside the network, which can be esecially interesting in heavy incast scenarios, as they are also scenarios where a lots of packets gets trimmed. 
+This exploration aims to evaluate whether early, switch-generated NACKs can decrease feedback latency and minimize the volume of circulating control traffic in heavy incast scenarios, where packet trimming occurs frequently.
 
-## 5.2 How
+## 5.2 Implementation Details
 
 To implement this idea, I modified the NDP simulation code to offload NACK generation to the switches. I wrapped all my modifications in a compilation flag `MY_CUSTOM_FLAG` and added a new Makefile target to compile a separate binary named `htsim_ndp_incast_shortflows_nack_offload`.
 
@@ -349,7 +349,7 @@ Here is how the implementation works:
 - **Receiver-side Pacing Integration:** The trimmed packet header still travels forward to the receiver. When the receiver gets the header, it passes the event to its `NdpPullPacer` in `ndp.cpp`. I modified `NdpPullPacer::sendPacket` so that for NACK packets, the pacer immediately frees the receiver-generated NACK (so it is never sent onto the wire) and only schedules a paced `NdpPull` packet to be sent back to the sender.
 - **Sender-side Handling:** In `NdpSrc::processNack` (`ndp.cpp`), since the incoming switch NACK has its pull flag disabled, the sender only adds the lost packet to its retransmission queue (`_rtx_queue`) without triggering a send. Later, when the paced `NdpPull` arrives, it triggers the actual transmission, preserving the original pacing loop.
 
-## 5.3 Methodology and Result
+## 5.3 Experimental Evaluation
 
 To evaluate the performance of this modification, I ran the incast scaling experiment using the offloaded binary:
 1. Compiled the offloaded library and binary:
@@ -415,9 +415,9 @@ Offloading NACK generation to the switches breaks the fundamental pacing loop of
 - Was the artifact usable?
 - How difficult was reproduction? -->
 
-The paper had many simulation inside, the one I chose was clearly explained as to how to read the graph and why was it chosen.
+The paper presents numerous simulation scenarios; the methodology for the large-scale incast experiment was clearly documented, facilitating a direct interpretation of the metrics and plots.
 
-I would have not been able to recreate the graph by only reading the paper, but there was a repository with all the code inside, and I had to do very few changes to make it work. The code was clearly documented and structured and it was easy to understand how it work.
+While reproducing the results solely from the text of the paper would have been challenging due to omitted configuration parameters, the availability of the official simulator repository made reproduction highly accessible. I had to do very few changes to make it work. The code was clearly documented and structured and it was easy to understand.
 
 # 7. Conclusion
 
