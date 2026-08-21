@@ -336,6 +336,15 @@ sequenceDiagram
   SW2->>Sink: pkg
 ```
 
+<!-- <center>
+  <img
+    alt="Timeline diagram for NDP transaction where packet gets trimmed"
+    src="figures/sequence_diagram.png"
+    style="width:50%;"
+    />
+  <p>Figure: Timeline diagram of an NDP transaction with packet trimming and NACK generation.</p>
+</center> -->
+
 
 This exploration aims to evaluate whether early, switch-generated NACKs can decrease feedback latency and minimize the volume of circulating control traffic in heavy incast scenarios, where packet trimming occurs frequently.
 
